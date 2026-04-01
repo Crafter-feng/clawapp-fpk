@@ -71,11 +71,11 @@ jobs:
           mkdir -p app_root/dist app_root/server app_root/cmd app_root/ui app_root/config
           cp -r clawapp-src/h5/dist/. app_root/dist/
           cp clawapp-src/dist-server/index.js app_root/server/index.mjs
-          cp fnos/manifest app_root/
-          cp -r fnos/ui/config app_root/ui/
-          cp -r fnos/config app_root/
-          cp fnos/bin/clawapp-server app_root/
-          cp -r fnos/cmd/service-setup app_root/cmd/
+          cp fnos/fnos/manifest app_root/
+          cp -r fnos/fnos/ui/config app_root/ui/
+          cp -r fnos/fnos/config app_root/
+          cp fnos/fnos/bin/clawapp-server app_root/
+          cp -r fnos/fnos/cmd/service-setup app_root/cmd/
           chmod +x app_root/cmd/service-setup app_root/clawapp-server
           ARCH=$(uname -m | sed 's/x86_64/x86/' | sed 's/aarch64/arm/')
           tar -czvf "clawapp-${{ steps.version.outputs.VERSION }}.${ARCH}.fpk" -C app_root .
