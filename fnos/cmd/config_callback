@@ -1,0 +1,61 @@
+#!/bin/bash
+# ClawApp FPK - 配置修改回调
+# 当用户在 fnOS UI 中修改配置时调用，新的配置值通过环境变量传入
+
+# 加载 fnOS common 函数
+INST_ETC="/var/apps/${TRIM_APPNAME}/etc"
+INST_VARIABLES="${INST_ETC}/installer-variables"
+DATA_DIR="${TRIM_PKGVAR}"
+CONF_FILE="${DATA_DIR}/.env"
+
+# load_variables_from_file 和 call_func 由 common 框架提供
+load_variables_from_file "${INST_VARIABLES}"
+
+# 处理配置变更
+process_form_data() {
+    local key="$1"
+    local val="$2"
+
+    # 验证端口范围
+    if [ "$key" = "proxy_port" ]; then
+        if [ -n "$val" ] && [ "$val" -lt 1024 ] || [ "$val" -gt 65535 ]; then
+            error_exit "端口必须在 1024-65535 之间"
+        fi
+    fi
+
+    # 写入 installer-variables（持久化）
+    {
+        echo "${key}=${val}"
+    } >> "${INST_VARIABLES}"
+}
+
+# fnOS 框架会将表单字段作为环境变量传入
+# 字段名即为变量名，需要写入 installer-variables
+# 标准 fnOS 表单处理：读取所有以表单字段名为 KEY 的环境变量
+
+# 写入新的 installer-variables（替换）
+{
+    echo "# ClawApp 配置 $(date)"
+    echo "proxy_port=${proxy_port:-3210}"
+    echo "proxy_token=${proxy_token:-}"
+    echo "gateway_url=${gateway_url:-ws://127.0.0.1:18789}"
+    echo "gateway_token=${gateway_token:-}"
+    echo "gateway_password=${gateway_password:-}"
+} > "${INST_VARIABLES}"
+
+# 同步更新 .env（Node.js 服务端读取）
+{
+    echo "PROXY_PORT=${proxy_port:-3210}"
+    echo "PROXY_TOKEN=${proxy_token:-}"
+    echo "SETUP_PENDING=false"
+    echo "OPENCLAW_GATEWAY_URL=${gateway_url:-ws://127.0.0.1:18789}"
+    echo "OPENCLAW_GATEWAY_TOKEN=${gateway_token:-}"
+    echo "OPENCLAW_GATEWAY_PASSWORD=${gateway_password:-}"
+} > "${CONF_FILE}"
+
+# 重启服务以应用新配置
+"$(dirname $0)/service-setup" stop 2>/dev/null
+"$(dirname $0)/service-setup" start 2>/dev/null
+
+echo "ClawApp 配置已更新"
+exit 0

@@ -2,105 +2,134 @@
 # ClawApp FPK - fnOS 生命周期脚本
 # 由 fnOS 在安装/启动/停止/卸载时调用
 
-set -e
+# ── fnOS 标准变量（由 common 脚本或 fnOS 框架注入）────────────────
+# INST_VARIABLES   = /var/apps/clawapp/etc/installer-variables
+# TRIM_APPNAME     = clawapp
+# TRIM_APPDEST     = /opt/clawapp
+# TRIM_PKGVAR      = /opt/clawapp/data
+# TRIM_MODE        = install | uninstall | start | stop | restart
+# TRIM_TEMP_LOGFILE = /tmp/trim_<uuid>.log（错误信息输出路径）
 
-# fnOS 提供的环境变量
-# TRIM_APPNAME    = 应用名（clawapp）
-# TRIM_APPDEST    = 应用安装目录（/opt/clawapp）
-# TRIM_PKGVAR     = 数据目录（/opt/clawapp/data）
-# TRIM_MODE       = install | uninstall | start | stop | restart
-
-LOG_FILE="${TRIM_PKGVAR}/clawapp.log"
-PID_FILE="${TRIM_PKGVAR}/clawapp.pid"
-APP_DIR="${TRIM_APPDEST}"
-DATA_DIR="${TRIM_PKGVAR}"
-CONF_FILE="${DATA_DIR}/.env"
-
-# fnOS 要求：声明后台运行和 PID 写入
 SVC_BACKGROUND=y
 SVC_WRITE_PID=y
-export SVC_BACKGROUND SVC_WRITE_PID
+SVC_CWD="${TRIM_PKGVAR}"
 
-log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOG_FILE"
+INST_ETC="/var/apps/${TRIM_APPNAME}/etc"
+INST_VARIABLES="${INST_ETC}/installer-variables"
+DATA_DIR="${TRIM_PKGVAR}"
+LOG_FILE="${DATA_DIR}/clawapp.log"
+PID_FILE="${DATA_DIR}/clawapp.pid"
+CONF_FILE="${DATA_DIR}/.env"
+
+# ── 错误处理 ────────────────────────────────────────────────────────
+error_exit() {
+    local msg="$1"
+    echo "ERROR: $msg" >&2
+    if [ -n "${TRIM_TEMP_LOGFILE:-}" ]; then
+        echo "$msg" > "$TRIM_TEMP_LOGFILE"
+    fi
+    exit 1
 }
 
-# ── 安装 ────────────────────────────────────────────────────────
-do_install() {
-    log "开始安装 ClawApp..."
-    mkdir -p "$DATA_DIR/dist" "$DATA_DIR/logs"
+# ── fnOS 配置表单 ───────────────────────────────────────────────────
+# initialize_variables 由 fnOS 框架调用（installer 会 source 本脚本）
+# 输出安装向导的配置表单（YAML 格式）
+initialize_variables() {
+    # 从 installer-variables 加载已有配置
+    load_variables_from_file "${INST_VARIABLES}"
 
-    # 首次运行 → 生成随机访问密码
-    if [ ! -f "$CONF_FILE" ]; then
-        RANDOM_TOKEN=$(python3 -c "import secrets; print(secrets.token_urlsafe(12))")
-        cat > "$CONF_FILE" << 'CONF'
-PROXY_PORT=3210
-PROXY_TOKEN=RANDOM_TOKEN_PLACEHOLDER
-SETUP_PENDING=true
-OPENCLAW_GATEWAY_URL=ws://127.0.0.1:18789
-OPENCLAW_GATEWAY_TOKEN=
-CONF
-        sed -i "s/RANDOM_TOKEN_PLACEHOLDER/$RANDOM_TOKEN/" "$CONF_FILE"
-        log "配置文件已生成，访问密码: $RANDOM_TOKEN"
-    else
-        log "配置文件已存在，跳过生成"
+    # fnOS wizard YAML 格式（shell 变量在 heredoc 内展开）
+    cat << WIZARD
+field:
+  name: proxy_port
+  type: number
+  label: 服务端口
+  default: "${proxy_port:-3210}"
+  min: 1024
+  max: 65535
+  required: true
+  hint: ClawApp Web 服务端口
+
+field:
+  name: gateway_url
+  type: text
+  label: OpenClaw Gateway 地址
+  default: "${gateway_url:-ws://127.0.0.1:18789}"
+  required: true
+  hint: 本机填 ws://127.0.0.1:18789
+
+field:
+  name: gateway_token
+  type: text
+  label: Gateway Token（选填）
+  default: "${gateway_token:-}"
+  required: false
+  hint: 如 Gateway 有 Token 认证，填入此项
+WIZARD
+}
+
+load_variables_from_file "${INST_VARIABLES}"
+
+do_install() {
+    mkdir -p "${DATA_DIR}/dist" "${DATA_DIR}/logs"
+
+    # 首次安装 → 使用向导配置的值（INSTALL variables）
+    if [ -f "${INST_VARIABLES}" ]; then
+        . "${INST_VARIABLES}"
     fi
 
-    log "安装完成"
+    # 写入 .env 配置文件（Node.js 服务端读取）
+    RANDOM_TOKEN="${proxy_token:-$(python3 -c "import secrets; print(secrets.token_urlsafe(12))")}"
+    cat > "${CONF_FILE}" << EOF
+PROXY_PORT=${proxy_port:-3210}
+PROXY_TOKEN=${RANDOM_TOKEN}
+SETUP_PENDING=true
+OPENCLAW_GATEWAY_URL=${gateway_url:-ws://127.0.0.1:18789}
+OPENCLAW_GATEWAY_TOKEN=${gateway_token:-}
+OPENCLAW_GATEWAY_PASSWORD=${gateway_password:-}
+EOF
+
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ClawApp 安装完成，端口:${proxy_port:-3210}，密码:$RANDOM_TOKEN" >> "${LOG_FILE}"
 }
 
-# ── 启动 ────────────────────────────────────────────────────────
 do_start() {
-    log "启动 ClawApp..."
+    cd "${TRIM_APPDEST}" || exit 1
 
-    if [ -f "$PID_FILE" ]; then
-        OLD_PID=$(cat "$PID_FILE")
+    if [ -f "${PID_FILE}" ]; then
+        OLD_PID=$(cat "${PID_FILE}")
         if kill -0 "$OLD_PID" 2>/dev/null; then
-            log "服务已在运行 (PID $OLD_PID)"
             return
         fi
-        rm -f "$PID_FILE"
+        rm -f "${PID_FILE}"
     fi
 
-    # 确保在应用目录执行
-    cd "$APP_DIR"
+    # 加载配置
+    [ -f "${CONF_FILE}" ] && . "${CONF_FILE}"
 
-    # 启动 Node.js 服务端（后台运行）
-    nohup node ./server/index.mjs >> "$DATA_DIR/logs/server.log" 2>&1 &
+    nohup node ./server/index.mjs >> "${DATA_DIR}/logs/server.log" 2>&1 &
     PID=$!
-    echo "$PID" > "$PID_FILE"
-
+    echo "$PID" > "${PID_FILE}"
     sleep 2
 
-    if kill -0 "$PID" 2>/dev/null; then
-        log "ClawApp 启动成功 (PID $PID)"
-    else
-        log "ClawApp 启动失败，查看日志: $DATA_DIR/logs/server.log"
-        exit 1
+    if ! kill -0 "$PID" 2>/dev/null; then
+        error_exit "ClawApp 启动失败，查看日志: ${DATA_DIR}/logs/server.log"
     fi
 }
 
-# ── 停止 ────────────────────────────────────────────────────────
 do_stop() {
-    log "停止 ClawApp..."
-    if [ -f "$PID_FILE" ]; then
-        PID=$(cat "$PID_FILE")
-        kill "$PID" 2>/dev/null && log "进程 $PID 已停止" || true
-        rm -f "$PID_FILE"
+    if [ -f "${PID_FILE}" ]; then
+        kill $(cat "${PID_FILE}") 2>/dev/null || true
+        rm -f "${PID_FILE}"
     fi
-    # 也按进程名杀（备用）
     pkill -f "node.*server/index.mjs" 2>/dev/null || true
 }
 
-# ── 卸载 ────────────────────────────────────────────────────────
 do_uninstall() {
-    log "卸载 ClawApp..."
     do_stop
-    log "用户数据保留在 $DATA_DIR"
 }
 
-# ── 主逻辑 ────────────────────────────────────────────────────────
-case "$TRIM_MODE" in
+# ── 主逻辑 ─────────────────────────────────────────────────────────
+case "${TRIM_MODE}" in
     install)
         do_install
         do_start
@@ -120,7 +149,7 @@ case "$TRIM_MODE" in
         do_start
         ;;
     *)
-        log "未知模式: $TRIM_MODE"
+        echo "Unknown mode: ${TRIM_MODE}" >&2
         ;;
 esac
 
