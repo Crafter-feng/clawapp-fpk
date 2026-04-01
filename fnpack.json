@@ -1,0 +1,18 @@
+{
+  "clawapp": {
+    "display_name": "ClawApp",
+    "desc": "OpenClaw 手机聊天客户端 | 流式对话 · 图片收发 · 工具调用 · PWA\n在飞牛桌面直接打开，连接本地或远程 OpenClaw Gateway",
+    "labels": "AI,聊天,效率",
+    "version": "1.6.3",
+    "author": "qingchencloud / Crafter-feng FPK",
+    "author_url": "https://github.com/qingchencloud/clawapp",
+    "bug_report_url": "https://github.com/Crafter-feng/clawapp-fpk/issues",
+    "install_type": "存储空间",
+    "size": "50",
+    "history": {
+      "1.6.3": "初始 FPK 版本，支持 amd64/arm64",
+      "1.5.0": "支持 Ed25519 设备签名认证",
+      "1.4.0": "新增离线消息缓存"
+    }
+  }
+}
