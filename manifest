@@ -1,0 +1,14 @@
+manifest_type=json
+{
+  "appname": "clawapp",
+  "display_name": "ClawApp",
+  "version": "1.6.3",
+  "arch": "x86,arm",
+  "author": "Crafter-feng",
+  "maintainer_url": "https://github.com/Crafter-feng/clawapp-fpk",
+  "startup_command": "bash /opt/clawapp/cmd/start",
+  "app_dir": "/opt/clawapp/app",
+  "ui_dir": "/opt/clawapp/ui",
+  "description": "OpenClaw 手机聊天客户端",
+  "service_port": "3210"
+}
