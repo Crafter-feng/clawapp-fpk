@@ -1,0 +1,5 @@
+#!/bin/bash
+PID_FILE="/opt/clawapp/data/clawapp.pid"
+[ -f "${PID_FILE}" ] && kill $(cat "${PID_FILE}") 2>/dev/null || true
+pkill -f "node.*server/index.mjs" 2>/dev/null || true
+exit 0
