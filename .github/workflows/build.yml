@@ -72,7 +72,7 @@ jobs:
       - name: 打包 FPK
         run: |
           cd /tmp
-          pfpt build clawapp
+          pfpt build --directory /tmp/clawapp
           find /tmp/clawapp -name "*.fpk" -exec ls -lh {} \;
 
       - name: Upload artifact
