@@ -1,0 +1,15 @@
+{
+    ".url": {
+        "ClawApp.Application":
+        {
+            "title": "ClawApp",
+            "desc": "OpenClaw 手机聊天客户端",
+            "icon": "images/64.png",
+            "type": "url",
+            "port": "3210",
+            "protocol": "http",
+            "url": "/",
+            "allUsers": true
+        }
+    }
+}
