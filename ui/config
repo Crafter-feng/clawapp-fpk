@@ -1,0 +1,14 @@
+{
+  ".url": {
+    "ClawApp.Application": {
+      "title": "ClawApp",
+      "desc": "OpenClaw",
+      "icon": "images/64.png",
+      "type": "url",
+      "port": "3210",
+      "protocol": "http",
+      "url": "/",
+      "allUsers": true
+    }
+  }
+}
