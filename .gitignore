@@ -1,0 +1,11 @@
+# 构建产物
+*.fpk
+dist/
+dist-server/
+fpk-root/
+node_modules/
+clawapp-src/
+
+# 系统
+.DS_Store
+*.log
