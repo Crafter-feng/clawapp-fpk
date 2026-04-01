@@ -1,0 +1,16 @@
+#!/bin/sh
+# ClawApp FPK - 服务端启动脚本
+# 由 fnOS service-setup 调用
+
+APP_DIR="${TRIM_APPDEST:-$1}"
+DATA_DIR="${TRIM_PKGVAR:-/opt/clawapp/data}"
+
+cd "$APP_DIR" || exit 1
+
+# 加载配置
+if [ -f "$DATA_DIR/.env" ]; then
+    export $(grep -E '^[A-Z_]+=' "$DATA_DIR/.env" | xargs)
+fi
+
+# 启动 ClawApp 代理服务端
+exec node ./server/index.mjs
