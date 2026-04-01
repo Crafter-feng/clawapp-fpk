@@ -1,0 +1,13 @@
+appname          = clawapp
+version          = 1.6.3
+display_name     = ClawApp
+platform         = x86,arm
+maintainer       = Crafter-feng
+maintainer_url   = https://github.com/Crafter-feng/clawapp-fpk
+distributor      = Crafter-feng
+distributor_url  = https://github.com/Crafter-feng/clawapp-fpk
+desktop_uidir   = ui
+desktop_applaunchname = ClawApp.Application
+service_port     = 3210
+desc             = OpenClaw 手机聊天客户端 | 流式对话 · 图片收发 · PWA 移动端 · Ed25519 认证
+===
