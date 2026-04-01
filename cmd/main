@@ -1,8 +1,7 @@
 #!/bin/bash
-# ClawApp cmd/main - FnOS 主进程
-INST_VARIABLES="/var/apps/clawapp/etc/installer-variables"
-if [ -f "${INST_VARIABLES}" ]; then set -a; . "${INST_VARIABLES}"; set +a; fi
-DATA_DIR="/opt/clawapp/data"
+INST_VARIABLES=/var/apps/clawapp/etc/installer-variables
+[ -f "${INST_VARIABLES}" ] && { set -a; . "${INST_VARIABLES}"; set +a; }
+DATA_DIR=/opt/clawapp/data
 [ -f "${DATA_DIR}/.env" ] && { set -a; . "${DATA_DIR}/.env"; set +a; }
 cd /opt/clawapp/app || exit 1
 exec node /opt/clawapp/app/server/index.mjs
