@@ -33,9 +33,9 @@ jobs:
 
       - name: 下载 fnpack 打包工具
         run: |
-          curl -fsSL https://static2.fnnas.com/fnpack/fnpack-1.2.1-linux-amd64 -o /usr/local/bin/fnpack
-          chmod +x /usr/local/bin/fnpack
-          fnpack --version
+          curl -fsSL https://static2.fnnas.com/fnpack/fnpack-1.2.1-linux-amd64 -o fnpack
+          chmod +x fnpack
+          ./fnpack --version
 
       - name: 获取版本
         id: version
@@ -67,7 +67,8 @@ jobs:
       - name: 组装 FPK 项目
         run: |
           # 复制 fnOS 配置到 /tmp/clawapp/
-          cp -r fpk-repo/fnos /tmp/clawapp/
+          mkdir -p /tmp/clawapp
+          cp -r fpk-repo/fnos/. /tmp/clawapp/
 
           # 复制 ClawApp 产物到 app/ 目录
           mkdir -p /tmp/clawapp/app/dist
@@ -76,23 +77,19 @@ jobs:
           mkdir -p /tmp/clawapp/app/server
           cp clawapp-src/dist-server/index.js /tmp/clawapp/app/server/index.mjs
 
-          # 替换 manifest 中的版本号
-          sed -i 's/"version": "1.6.3"/"version": "${{ env.VERSION || '1.6.3' }}"/g' /tmp/clawapp/manifest
-
           echo "=== FPK 项目结构 ==="
           find /tmp/clawapp -type f | sort
 
       - name: 打包 FPK
         run: |
-          cd /tmp
-          fnpack build clawapp
-          ls -lh /tmp/clawapp/*.fpk 2>/dev/null || find /tmp/clawapp -name "*.fpk" -ls
+          ./fnpack build /tmp/clawapp
+          find . -name "*.fpk" -exec ls -lh {} \;
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: clawapp-fpk
-          path: /tmp/clawapp/*.fpk
+          path: "*.fpk"
           retention-days: 14
 
   release:
