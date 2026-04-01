@@ -23,16 +23,12 @@ jobs:
           sparse-checkout: |
             h5/
             server/
-            Dockerfile
           sparse-checkout-cone-mode: false
 
       - name: Checkout FPK 配置
         uses: actions/checkout@v4
         with:
           path: fnos
-          sparse-checkout: |
-            fnos/
-          sparse-checkout-cone-mode: false
 
       - name: 获取版本
         id: version
@@ -43,7 +39,6 @@ jobs:
             VERSION="${GITHUB_REF_NAME#v}"
             echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           fi
-          echo "构建版本: ${{ steps.version.outputs.VERSION }}"
 
       - name: 安装 Node.js
         uses: actions/setup-node@v4
@@ -69,23 +64,19 @@ jobs:
           cd clawapp-src
           cp -r h5/dist server/h5_dist
           sed -i 's|\.\./h5/dist|h5_dist|g' server/index.js
-          ncc build server/index.js -o dist-server --no-source-map -m
+          ncc build server/index.js -o dist-server
 
-      - name: 组装 app 并打包
+      - name: 组装并打包 FPK
         run: |
-          WORKSPACE="${{ github.workspace }}"
-          mkdir -p app_root/{dist,server,cmd,ui,config}
-          cp -r "$WORKSPACE/clawapp-src/h5/dist/"* app_root/dist/
-          cp "$WORKSPACE/clawapp-src/dist-server/index.js" app_root/server/index.mjs
-
-          # 复制 fnOS 原生配置（来自 clawapp-fpk 仓库的 fnos/）
-          cp "$WORKSPACE/fnos/manifest" app_root/
-          cp -r "$WORKSPACE/fnos/ui/config" app_root/ui/
-          cp -r "$WORKSPACE/fnos/config" app_root/
-          cp "$WORKSPACE/fnos/bin/clawapp-server" app_root/
-          cp -r "$WORKSPACE/fnos/cmd/service-setup" app_root/cmd/
+          mkdir -p app_root/dist app_root/server app_root/cmd app_root/ui app_root/config
+          cp -r clawapp-src/h5/dist/. app_root/dist/
+          cp clawapp-src/dist-server/index.js app_root/server/index.mjs
+          cp fnos/manifest app_root/
+          cp -r fnos/ui/config app_root/ui/
+          cp -r fnos/config app_root/
+          cp fnos/bin/clawapp-server app_root/
+          cp -r fnos/cmd/service-setup app_root/cmd/
           chmod +x app_root/cmd/service-setup app_root/clawapp-server
-
           ARCH=$(uname -m | sed 's/x86_64/x86/' | sed 's/aarch64/arm/')
           tar -czvf "clawapp-${{ steps.version.outputs.VERSION }}.${ARCH}.fpk" -C app_root .
           ls -lh *.fpk
@@ -115,7 +106,8 @@ jobs:
           tag_name: ${{ github.ref_name }}
           body: |
             ## ClawApp FPK for 飞牛 fnOS
-            安装后桌面图标直接打开，无需 Docker。
+
+            安装后桌面图标直接点击打开，无需 Docker。
           files: artifacts/*.fpk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
