@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - 'v*'
+  repository_dispatch:
+    types: [build-fpk]
   workflow_dispatch:
     inputs:
       version:
