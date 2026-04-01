@@ -18,6 +18,11 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout FPK 配置仓库
+        uses: actions/checkout@v4
+        with:
+          path: fpk-repo
+
       - name: Checkout ClawApp 源码
         uses: actions/checkout@v4
         with:
@@ -84,20 +89,20 @@ manifest_type=json
 MANIFEST
 
           # 2. cmd/
-          cp /workspace/clawapp-fpk/fnos/cmd/start /tmp/clawapp/cmd/start
-          cp /workspace/clawapp-fpk/fnos/cmd/main /tmp/clawapp/cmd/main
-          cp /workspace/clawapp-fpk/fnos/cmd/stop /tmp/clawapp/cmd/stop
+          cp fpk-repo/fnos/cmd/start /tmp/clawapp/cmd/start
+          cp fpk-repo/fnos/cmd/main /tmp/clawapp/cmd/main
+          cp fpk-repo/fnos/cmd/stop /tmp/clawapp/cmd/stop
           chmod +x /tmp/clawapp/cmd/*
 
           # 3. config/
-          cp /workspace/clawapp-fpk/fnos/config/privilege /tmp/clawapp/config/privilege
-          cp /workspace/clawapp-fpk/fnos/config/resource /tmp/clawapp/config/resource
+          cp fpk-repo/fnos/config/privilege /tmp/clawapp/config/privilege
+          cp fpk-repo/fnos/config/resource /tmp/clawapp/config/resource
 
           # 4. ui/
-          cp /workspace/clawapp-fpk/fnos/ui/config /tmp/clawapp/ui/config
-          cp /workspace/clawapp-fpk/fnos/ICON.PNG /tmp/clawapp/ICON.PNG 2>/dev/null || true
-          cp /workspace/clawapp-fpk/fnos/ICON_256.PNG /tmp/clawapp/ICON_256.PNG 2>/dev/null || true
-          cp /workspace/clawapp-fpk/fnos/ui/images/64.png /tmp/clawapp/ui/images/64.png 2>/dev/null || true
+          cp fpk-repo/fnos/ui/config /tmp/clawapp/ui/config
+          cp fpk-repo/fnos/ICON.PNG /tmp/clawapp/ICON.PNG 2>/dev/null || true
+          cp fpk-repo/fnos/ICON_256.PNG /tmp/clawapp/ICON_256.PNG 2>/dev/null || true
+          cp fpk-repo/fnos/ui/images/64.png /tmp/clawapp/ui/images/64.png 2>/dev/null || true
 
           # 5. app/ (ClawApp 产物)
           cp -r clawapp-src/h5/dist/* /tmp/clawapp/app/dist/ 2>/dev/null || true
