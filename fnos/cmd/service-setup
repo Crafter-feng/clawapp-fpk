@@ -1,0 +1,117 @@
+#!/bin/bash
+# ClawApp FPK - fnOS 生命周期脚本
+# 由 fnOS 在安装/启动/停止/卸载时调用
+
+set -e
+
+# fnOS 提供的环境变量
+# TRIM_APPNAME    = 应用名（clawapp）
+# TRIM_APPDEST    = 应用安装目录
+# TRIM_PKGVAR     = 数据目录（持久化存储）
+# TRIM_MODE       = install | uninstall | start | stop | restart
+# SVC_BACKGROUND  = 是否后台运行（y/n）
+# SVC_WRITE_PID   = 是否写入 PID 文件（y/n）
+
+LOG_FILE="${TRIM_PKGVAR}/clawapp.log"
+PID_FILE="${TRIM_PKGVAR}/clawapp.pid"
+APP_DIR="${TRIM_APPDEST}"
+DATA_DIR="${TRIM_PKGVAR}"
+CONF_FILE="${DATA_DIR}/.env"
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOG_FILE"
+}
+
+# ── 安装 ────────────────────────────────────────────────────────
+do_install() {
+    log "开始安装 ClawApp..."
+    mkdir -p "$DATA_DIR/dist" "$DATA_DIR/logs"
+
+    # 首次运行 → 生成随机访问密码
+    if [ ! -f "$CONF_FILE" ]; then
+        RANDOM_TOKEN=$(python3 -c "import secrets; print(secrets.token_urlsafe(12))")
+        cat > "$CONF_FILE" << EOF
+PROXY_PORT=3210
+PROXY_TOKEN=$RANDOM_TOKEN
+SETUP_PENDING=true
+OPENCLAW_GATEWAY_URL=ws://127.0.0.1:18789
+OPENCLAW_GATEWAY_TOKEN=
+EOF
+        log "配置文件已生成，访问密码: $RANDOM_TOKEN"
+    fi
+
+    log "安装完成"
+}
+
+# ── 启动 ────────────────────────────────────────────────────────
+do_start() {
+    log "启动 ClawApp..."
+
+    # 已有进程运行 → 跳过
+    if [ -f "$PID_FILE" ]; then
+        OLD_PID=$(cat "$PID_FILE")
+        if kill -0 "$OLD_PID" 2>/dev/null; then
+            log "服务已在运行 (PID $OLD_PID)"
+            return
+        fi
+        rm -f "$PID_FILE"
+    fi
+
+    # 启动 Node.js 服务端
+    cd "$APP_DIR"
+    nohup node ./server/index.mjs > "$DATA_DIR/logs/server.log" 2>&1 &
+    PID=$!
+    echo "$PID" > "$PID_FILE"
+    sleep 1
+
+    if kill -0 "$PID" 2>/dev/null; then
+        log "ClawApp 启动成功 (PID $PID)"
+    else
+        log "ClawApp 启动失败"
+    fi
+}
+
+# ── 停止 ────────────────────────────────────────────────────────
+do_stop() {
+    log "停止 ClawApp..."
+    if [ -f "$PID_FILE" ]; then
+        PID=$(cat "$PID_FILE")
+        kill "$PID" 2>/dev/null && log "进程 $PID 已停止" || true
+        rm -f "$PID_FILE"
+    fi
+}
+
+# ── 卸载 ────────────────────────────────────────────────────────
+do_uninstall() {
+    log "卸载 ClawApp..."
+    do_stop
+    # 保留用户数据和日志，供下次安装使用
+    log "用户数据保留在 $DATA_DIR"
+}
+
+# ── 主逻辑 ────────────────────────────────────────────────────────
+case "$TRIM_MODE" in
+    install)
+        do_install
+        do_start
+        ;;
+    uninstall)
+        do_uninstall
+        ;;
+    start)
+        do_start
+        ;;
+    stop)
+        do_stop
+        ;;
+    restart)
+        do_stop
+        do_start
+        ;;
+    *)
+        log "未知模式: $TRIM_MODE"
+        ;;
+esac
+
+# fnOS 生命周期脚本必须正常退出
+exit 0
