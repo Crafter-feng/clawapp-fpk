@@ -7,13 +7,12 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'ClawApp 版本（如 1.6.3）'
+        description: 'ClawApp 版本'
         required: false
         default: ''
 
 permissions:
   contents: write
-  actions: read
 
 jobs:
   build:
@@ -24,39 +23,24 @@ jobs:
         with:
           repository: qingchencloud/clawapp
           path: clawapp-src
-          sparse-checkout: |
-            h5/
-            server/
+          sparse-checkout: h5/ server/
           sparse-checkout-cone-mode: false
 
-      - name: Checkout FPK 配置
-        uses: actions/checkout@v4
-        with:
-          path: fnos
+      - name: 安装 fnOS 构建工具
+        run: npm install -g @fnnas/tools
 
       - name: 获取版本
         id: version
         run: |
-          if [ "${{ inputs.version }}" != "" ]; then
-            echo "VERSION=${{ inputs.version }}" >> $GITHUB_OUTPUT
-          else
-            VERSION="${GITHUB_REF_NAME#v}"
-            echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-          fi
-
-      - name: 安装 Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: 安装 pnpm
-        run: npm install -g pnpm@9
+          VERSION="${GITHUB_REF_NAME#v}"
+          [ "${{ inputs.version }}" != "" ] && VERSION="${{ inputs.version }}"
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
       - name: 构建 H5 前端
         working-directory: clawapp-src/h5
         run: |
-          pnpm install
-          pnpm build
+          npm install -g pnpm@9
+          pnpm install && pnpm build
 
       - name: 构建服务端
         working-directory: clawapp-src/server
@@ -67,47 +51,35 @@ jobs:
           npm install -g @vercel/ncc
           cd clawapp-src
           cp -r h5/dist server/h5_dist
-          sed -i 's|\.\./h5/dist|h5_dist|g' server/index.js
+          sed -i 's|\\.\\./h5/dist|h5_dist|g' server/index.js
           ncc build server/index.js -o dist-server --no-source-map -m
 
-      - name: 组装并打包 FPK
+      - name: 创建 FPK 项目
         run: |
-          # 路径：fnos 仓库 → fnos/manifest、fnos/ui/、fnos/config/
-          mkdir -p app_root/{dist,server,cmd,ui,config}
+          cd /tmp
+          fnpack create clawapp
+          ls -la clawapp/
 
-          # 复制前端
-          cp -r clawapp-src/h5/dist/. app_root/dist/
+      - name: 复制构建产物到 app 目录
+        run: |
+          cp -r clawapp-src/h5/dist/. /tmp/clawapp/app/
+          mkdir -p /tmp/clawapp/app/server
+          cp clawapp-src/dist-server/index.js /tmp/clawapp/app/server/index.mjs
+          chmod +x /tmp/clawapp/cmd/*
+          ls /tmp/clawapp/cmd/
+          ls /tmp/clawapp/app/
 
-          # 复制服务端
-          cp clawapp-src/dist-server/index.js app_root/server/index.mjs
-
-          # 复制 fnOS 配置文件（fnos/ 是仓库根目录下的 fnos/ 子目录）
-          cp fnos/manifest app_root/
-          cp -r fnos/ui/config app_root/ui/
-          cp -r fnos/config app_root/
-          cp fnos/bin/clawapp-server app_root/
-          cp -r fnos/cmd/service-setup app_root/cmd/
-          chmod +x app_root/cmd/service-setup app_root/clawapp-server
-
-          # 验证关键文件存在
-          echo "=== app_root 内容 ==="
-          find app_root -type f | sort
-          echo "=== 文件大小 ==="
-          du -sh app_root/*
-
-          # 打包（tar.gz）
-          ARCH=$(uname -m | sed 's/x86_64/x86/' | sed 's/aarch64/arm/')
-          FPK_NAME="clawapp-${{ steps.version.outputs.VERSION }}.${ARCH}.fpk"
-          tar -czvf "$FPK_NAME" -C app_root .
-          echo "=== FPK 打包结果 ==="
-          ls -lh "$FPK_NAME"
-          echo "FPK_NAME=$FPK_NAME" >> $GITHUB_OUTPUT
+      - name: 打包 FPK
+        run: |
+          cd /tmp
+          pfpt build clawapp
+          find /tmp/clawapp -name "*.fpk" -exec ls -lh {} \;
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: clawapp-fpk
-          path: clawapp-*.fpk
+          path: /tmp/clawapp/*.fpk
           retention-days: 14
 
   release:
@@ -115,35 +87,18 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
-      - name: Download artifact
+      - name: Download
         uses: actions/download-artifact@v4
         with:
           name: clawapp-fpk
           path: artifacts
-
-      - name: 查看下载内容
-        run: |
-          echo "=== artifacts 内容 ==="
-          find artifacts -type f
-          ls -lh artifacts/
-
-      - name: 发布 Release
+      - name: Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.ref_name }}
           body: |
             ## ClawApp FPK for 飞牛 fnOS
-
-            ### 安装方法
-            1. 下载下方 `.fpk` 文件（对应你的 NAS 架构）
-            2. 上传至飞牛 NAS → 应用中心 → 从文件安装
-            3. 安装后在 fnOS 桌面找到 ClawApp 图标，点击打开
-
-            ### 配置说明
-            - 访问地址：`http://<NAS_IP>:3210`
-            - 访问密码：首次随机生成，查看安装日志
-            - Gateway：`ws://127.0.0.1:18789`
+            安装后桌面图标直接打开，无需 Docker。
           files: artifacts/*.fpk
-          draft: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
