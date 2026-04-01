@@ -6,17 +6,20 @@ set -e
 
 # fnOS 提供的环境变量
 # TRIM_APPNAME    = 应用名（clawapp）
-# TRIM_APPDEST    = 应用安装目录
-# TRIM_PKGVAR     = 数据目录（持久化存储）
+# TRIM_APPDEST    = 应用安装目录（/opt/clawapp）
+# TRIM_PKGVAR     = 数据目录（/opt/clawapp/data）
 # TRIM_MODE       = install | uninstall | start | stop | restart
-# SVC_BACKGROUND  = 是否后台运行（y/n）
-# SVC_WRITE_PID   = 是否写入 PID 文件（y/n）
 
 LOG_FILE="${TRIM_PKGVAR}/clawapp.log"
 PID_FILE="${TRIM_PKGVAR}/clawapp.pid"
 APP_DIR="${TRIM_APPDEST}"
 DATA_DIR="${TRIM_PKGVAR}"
 CONF_FILE="${DATA_DIR}/.env"
+
+# fnOS 要求：声明后台运行和 PID 写入
+SVC_BACKGROUND=y
+SVC_WRITE_PID=y
+export SVC_BACKGROUND SVC_WRITE_PID
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOG_FILE"
@@ -30,14 +33,17 @@ do_install() {
     # 首次运行 → 生成随机访问密码
     if [ ! -f "$CONF_FILE" ]; then
         RANDOM_TOKEN=$(python3 -c "import secrets; print(secrets.token_urlsafe(12))")
-        cat > "$CONF_FILE" << EOF
+        cat > "$CONF_FILE" << 'CONF'
 PROXY_PORT=3210
-PROXY_TOKEN=$RANDOM_TOKEN
+PROXY_TOKEN=RANDOM_TOKEN_PLACEHOLDER
 SETUP_PENDING=true
 OPENCLAW_GATEWAY_URL=ws://127.0.0.1:18789
 OPENCLAW_GATEWAY_TOKEN=
-EOF
+CONF
+        sed -i "s/RANDOM_TOKEN_PLACEHOLDER/$RANDOM_TOKEN/" "$CONF_FILE"
         log "配置文件已生成，访问密码: $RANDOM_TOKEN"
+    else
+        log "配置文件已存在，跳过生成"
     fi
 
     log "安装完成"
@@ -47,7 +53,6 @@ EOF
 do_start() {
     log "启动 ClawApp..."
 
-    # 已有进程运行 → 跳过
     if [ -f "$PID_FILE" ]; then
         OLD_PID=$(cat "$PID_FILE")
         if kill -0 "$OLD_PID" 2>/dev/null; then
@@ -57,17 +62,21 @@ do_start() {
         rm -f "$PID_FILE"
     fi
 
-    # 启动 Node.js 服务端
+    # 确保在应用目录执行
     cd "$APP_DIR"
-    nohup node ./server/index.mjs > "$DATA_DIR/logs/server.log" 2>&1 &
+
+    # 启动 Node.js 服务端（后台运行）
+    nohup node ./server/index.mjs >> "$DATA_DIR/logs/server.log" 2>&1 &
     PID=$!
     echo "$PID" > "$PID_FILE"
-    sleep 1
+
+    sleep 2
 
     if kill -0 "$PID" 2>/dev/null; then
         log "ClawApp 启动成功 (PID $PID)"
     else
-        log "ClawApp 启动失败"
+        log "ClawApp 启动失败，查看日志: $DATA_DIR/logs/server.log"
+        exit 1
     fi
 }
 
@@ -79,13 +88,14 @@ do_stop() {
         kill "$PID" 2>/dev/null && log "进程 $PID 已停止" || true
         rm -f "$PID_FILE"
     fi
+    # 也按进程名杀（备用）
+    pkill -f "node.*server/index.mjs" 2>/dev/null || true
 }
 
 # ── 卸载 ────────────────────────────────────────────────────────
 do_uninstall() {
     log "卸载 ClawApp..."
     do_stop
-    # 保留用户数据和日志，供下次安装使用
     log "用户数据保留在 $DATA_DIR"
 }
 
@@ -106,6 +116,7 @@ case "$TRIM_MODE" in
         ;;
     restart)
         do_stop
+        sleep 1
         do_start
         ;;
     *)
@@ -113,5 +124,4 @@ case "$TRIM_MODE" in
         ;;
 esac
 
-# fnOS 生命周期脚本必须正常退出
 exit 0
