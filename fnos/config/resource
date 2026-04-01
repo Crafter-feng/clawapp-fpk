@@ -1,0 +1,13 @@
+{
+    "data-share": {
+        "shares": [
+            {
+                "name": "ClawApp 数据",
+                "permission": {
+                    "rw": ["clawapp"]
+                }
+            }
+        ]
+    },
+    "systemd-unit": {}
+}
