@@ -33,12 +33,18 @@ jobs:
 
       - name: 下载 fnpack 打包工具
         run: |
-          curl -fsSL https://static2.fnnas.com/fnpack/fnpack-1.2.1-linux-amd64 -o fnpack
-          chmod +x fnpack
-          ./fnpack --version
+          set -x
+          which curl wget 2>/dev/null || true
+          uname -a
+          pwd
+          ls -la
+          echo "=== 下载 fnpack ==="
+          curl -fsSL https://static2.fnnas.com/fnpack/fnpack-1.2.1-linux-amd64 -o fnpack || true
+          echo "curl 退出码: $?"
+          ls -lh fnpack 2>/dev/null || echo "fnpack 未创建"
+          file fnpack 2>/dev/null || true
 
       - name: 获取版本
-        id: version
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           [ "${{ inputs.version }}" != "" ] && VERSION="${{ inputs.version }}"
@@ -66,22 +72,18 @@ jobs:
 
       - name: 组装 FPK 项目
         run: |
-          # 复制 fnOS 配置到 /tmp/clawapp/
           mkdir -p /tmp/clawapp
           cp -r fpk-repo/fnos/. /tmp/clawapp/
-
-          # 复制 ClawApp 产物到 app/ 目录
           mkdir -p /tmp/clawapp/app/dist
           cp -r clawapp-src/h5/dist/* /tmp/clawapp/app/dist/
-
           mkdir -p /tmp/clawapp/app/server
           cp clawapp-src/dist-server/index.js /tmp/clawapp/app/server/index.mjs
-
           echo "=== FPK 项目结构 ==="
           find /tmp/clawapp -type f | sort
 
       - name: 打包 FPK
         run: |
+          chmod +x fnpack
           ./fnpack build /tmp/clawapp
           find . -name "*.fpk" -exec ls -lh {} \;
 
