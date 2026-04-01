@@ -4,25 +4,21 @@ on:
   push:
     tags:
       - 'v*'
-  repository_dispatch:
-    types: [build-fpk]
   workflow_dispatch:
     inputs:
       version:
-        description: 'ClawApp 版本（如 1.6.3），默认取最新 release'
+        description: 'ClawApp 版本（如 1.6.3）'
         required: false
         default: ''
 
 jobs:
-  # ── 构建 amd64 FPK ──────────────────────────────────────────────
-  build-amd64:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout ClawApp 源码
+      - name: Checkout
         uses: actions/checkout@v4
         with:
-          repository: qingchencloud/clawapp
-          path: clawapp-src
+          path: fnos-app
 
       - name: 获取版本
         id: version
@@ -30,186 +26,42 @@ jobs:
           if [ "${{ inputs.version }}" != "" ]; then
             VERSION="${{ inputs.version }}"
           else
-            VERSION=$(node -p "require('./clawapp-src/package.json').version")
+            VERSION="${GITHUB_REF_NAME#v}"
           fi
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-          echo "构建版本: $VERSION"
 
-      - name: 安装 Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: 安装 pnpm
-        run: npm install -g pnpm@9
-
-      - name: 安装 H5 依赖并构建前端
-        working-directory: clawapp-src/h5
+      - name: 构建
         run: |
-          pnpm install --frozen-lockfile
-          pnpm build
-          echo "=== H5 dist 内容 ==="
-          ls -lh dist/
+          cd fnos-app/scripts/apps/clawapp
+          chmod +x *.sh
+          bash build.sh "${{ steps.version.outputs.VERSION }}"
+          ARCH=$(uname -m | sed 's/x86_64/x86/' | sed 's/aarch64/arm/')
+          cp /tmp/app.tgz "clawapp-${{ steps.version.outputs.VERSION }}_${ARCH}.fpk"
+          ls -lh *.fpk
 
-      - name: 安装服务端依赖
-        working-directory: clawapp-src/server
-        run: pnpm install --frozen-lockfile
-
-      - name: 预编译服务端（ncc 打包为单文件）
-        run: |
-          npm install -g @vercel/ncc
-
-          cd clawapp-src
-          mkdir -p dist-server
-
-          # ncc 打包 server/index.js → dist-server/index.js
-          # 路径 ../h5/dist 在构建时复制后就不需要了
-          # 先把 h5/dist 复制到 server/h5_dist（让 ncc 解析路径）
-          cp -r h5/dist server/h5_dist
-
-          # 替换源码中的相对路径为打包后路径
-          sed -i "s|\.\./h5/dist|./h5_dist|g" server/index.js
-
-          ncc build server/index.js -o dist-server --no-source-map -m
-
-          echo "=== ncc 输出 ==="
-          ls -lh dist-server/
-          echo "=== 文件大小 ==="
-          du -sh dist-server/
-
-          # 清理敏感信息
-          rm -f dist-server/*.map 2>/dev/null || true
-
-      - name: 构建 FPK 目录结构（amd64）
-        run: |
-          mkdir -p fpk-root/clawapp/data/{dist,server,config,logs}
-
-          # 复制 H5 前端
-          cp -r clawapp-src/h5/dist/* fpk-root/clawapp/data/dist/
-          echo "H5 前端: $(ls fpk-root/clawapp/data/dist/ | wc -l) 文件"
-
-          # 复制编译后的服务端
-          cp clawapp-src/dist-server/index.js fpk-root/clawapp/data/server/index.mjs
-          cp clawapp-src/dist-server/index.js.map fpk-root/clawapp/data/server/ 2>/dev/null || true
-          echo "服务端: $(ls -lh fpk-root/clawapp/data/server/)"
-
-          # 复制 fnpack 元数据
-          cp fnpack.json fpk-root/clawapp/
-
-          echo "=== FPK 结构 ==="
-          find fpk-root -type f | head -20
-
-      - name: 打包 FPK（amd64）
-        id: pkg-amd64
-        run: |
-          cd fpk-root
-          tar -czvf "clawapp-amd64-${{ steps.version.outputs.VERSION }}.fpk" clawapp/
-          FPK_SIZE=$(du -sh "clawapp-amd64-${{ steps.version.outputs.VERSION }}.fpk" | cut -f1)
-          echo "FPK 大小: $FPK_SIZE"
-          echo "fpk_name=clawapp-amd64-${{ steps.version.outputs.VERSION }}.fpk" >> $GITHUB_OUTPUT
-
-      - name: 上传 FPK artifact（amd64）
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: clawapp-fpk-amd64-v${{ steps.version.outputs.VERSION }}
-          path: fpk-root/clawapp-amd64-${{ steps.version.outputs.VERSION }}.fpk
-          retention-days: 30
+          name: clawapp-fpk-v${{ steps.version.outputs.VERSION }}
+          path: "clawapp-${{ steps.version.outputs.VERSION }}_*.fpk"
+          retention-days: 14
 
-  # ── 构建 arm64 FPK ──────────────────────────────────────────────
-  build-arm64:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout ClawApp 源码
-        uses: actions/checkout@v4
-        with:
-          repository: qingchencloud/clawapp
-          path: clawapp-src
-
-      - name: 获取版本
-        id: version
-        run: |
-          if [ "${{ inputs.version }}" != "" ]; then
-            echo "VERSION=${{ inputs.version }}" >> $GITHUB_OUTPUT
-          else
-            VERSION=$(node -p "require('./clawapp-src/package.json').version")
-            echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-          fi
-
-      - name: 安装 Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: 安装 pnpm
-        run: npm install -g pnpm@9
-
-      - name: 构建 H5 + 服务端
-        run: |
-          cd clawapp-src/h5 && pnpm install --frozen-lockfile && pnpm build
-          cd clawapp-src/server && pnpm install --frozen-lockfile
-
-      - name: ncc 打包（arm64）
-        run: |
-          npm install -g @vercel/ncc
-          cd clawapp-src
-          cp -r h5/dist server/h5_dist
-          sed -i "s|\.\./h5/dist|./h5_dist|g" server/index.js
-          ncc build server/index.js -o dist-server --no-source-map -m
-          mkdir -p fpk-root/clawapp/data/{dist,server,config,logs}
-          cp -r h5/dist/* fpk-root/clawapp/data/dist/
-          cp dist-server/index.js fpk-root/clawapp/data/server/index.mjs
-          cp fnpack.json fpk-root/clawapp/
-
-      - name: 打包 FPK（arm64）
-        run: |
-          cd fpk-root
-          tar -czvf "clawapp-arm64-${{ steps.version.outputs.VERSION }}.fpk" clawapp/
-          echo "fpk_name=clawapp-arm64-${{ steps.version.outputs.VERSION }}.fpk" >> $GITHUB_OUTPUT
-
-      - name: 上传 FPK artifact（arm64）
-        uses: actions/upload-artifact@v4
-        with:
-          name: clawapp-fpk-arm64-v${{ steps.version.outputs.VERSION }}
-          path: fpk-root/clawapp-arm64-${{ steps.version.outputs.VERSION }}.fpk
-          retention-days: 30
-
-  # ── 发布 Release ─────────────────────────────────────────────────
   release:
-    needs: [build-amd64, build-arm64]
+    needs: build
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
-      - name: 下载所有 FPK
+      - name: Download
         uses: actions/download-artifact@v4
         with:
           path: artifacts
-
-      - name: 获取版本
-        id: version
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
-
-      - name: 发布 Release
+      - name: Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.ref_name }}
-          name: ClawApp FPK v${{ github.ref_name }}
           body: |
             ## ClawApp FPK for 飞牛 fnOS
-
-            ### 支持架构
-            - ✅ `clawapp-amd64-X.X.X.fpk` — Intel / AMD NAS
-            - ✅ `clawapp-arm64-X.X.X.fpk` — ARM64 NAS（树莓派等）
-
-            ### 安装方法
-            1. 下载对应架构的 `.fpk` 文件
-            2. 上传至飞牛 NAS → 应用中心 → 从文件安装
-            3. 安装后在 fnOS 桌面找到 ClawApp 图标点击打开
-
-            ### 配置说明
-            - 默认端口：`3210`
-            - 默认密码：首次启动随机生成，记录在 `data/.env`
-            - Gateway 地址：默认 `ws://127.0.0.1:18789`（本机 OpenClaw）
-          files: |
-            artifacts/**/*.fpk
+            安装后桌面图标直接打开，无需 Docker。
+          files: artifacts/**/*.fpk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
