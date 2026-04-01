@@ -15,35 +15,86 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout ClawApp 源码
         uses: actions/checkout@v4
         with:
-          path: fnos-app
+          repository: qingchencloud/clawapp
+          path: clawapp-src
+          sparse-checkout: |
+            h5/
+            server/
+            Dockerfile
+          sparse-checkout-cone-mode: false
+
+      - name: Checkout FPK 配置
+        uses: actions/checkout@v4
+        with:
+          path: fnos
+          sparse-checkout: |
+            fnos/
+          sparse-checkout-cone-mode: false
 
       - name: 获取版本
         id: version
         run: |
           if [ "${{ inputs.version }}" != "" ]; then
-            VERSION="${{ inputs.version }}"
+            echo "VERSION=${{ inputs.version }}" >> $GITHUB_OUTPUT
           else
             VERSION="${GITHUB_REF_NAME#v}"
+            echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           fi
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "构建版本: ${{ steps.version.outputs.VERSION }}"
 
-      - name: 构建
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 安装 pnpm
+        run: npm install -g pnpm@9
+
+      - name: 构建 H5 前端
+        working-directory: clawapp-src/h5
         run: |
-          cd fnos-app/scripts/apps/clawapp
-          chmod +x *.sh
-          bash build.sh "${{ steps.version.outputs.VERSION }}"
+          pnpm install
+          pnpm build
+
+      - name: 构建服务端
+        working-directory: clawapp-src/server
+        run: pnpm install
+
+      - name: ncc 打包服务端
+        run: |
+          npm install -g @vercel/ncc
+          cd clawapp-src
+          cp -r h5/dist server/h5_dist
+          sed -i 's|\.\./h5/dist|h5_dist|g' server/index.js
+          ncc build server/index.js -o dist-server --no-source-map -m
+
+      - name: 组装 app 并打包
+        run: |
+          WORKSPACE="${{ github.workspace }}"
+          mkdir -p app_root/{dist,server,cmd,ui,config}
+          cp -r "$WORKSPACE/clawapp-src/h5/dist/"* app_root/dist/
+          cp "$WORKSPACE/clawapp-src/dist-server/index.js" app_root/server/index.mjs
+
+          # 复制 fnOS 原生配置（来自 clawapp-fpk 仓库的 fnos/）
+          cp "$WORKSPACE/fnos/manifest" app_root/
+          cp -r "$WORKSPACE/fnos/ui/config" app_root/ui/
+          cp -r "$WORKSPACE/fnos/config" app_root/
+          cp "$WORKSPACE/fnos/bin/clawapp-server" app_root/
+          cp -r "$WORKSPACE/fnos/cmd/service-setup" app_root/cmd/
+          chmod +x app_root/cmd/service-setup app_root/clawapp-server
+
           ARCH=$(uname -m | sed 's/x86_64/x86/' | sed 's/aarch64/arm/')
-          cp /tmp/app.tgz "clawapp-${{ steps.version.outputs.VERSION }}_${ARCH}.fpk"
+          tar -czvf "clawapp-${{ steps.version.outputs.VERSION }}.${ARCH}.fpk" -C app_root .
           ls -lh *.fpk
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: clawapp-fpk-v${{ steps.version.outputs.VERSION }}
-          path: "clawapp-${{ steps.version.outputs.VERSION }}_*.fpk"
+          name: clawapp-fpk
+          path: "clawapp-*.fpk"
           retention-days: 14
 
   release:
@@ -55,6 +106,9 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+          pattern: clawapp-fpk
+          merge-multiple: false
+
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
@@ -62,6 +116,6 @@ jobs:
           body: |
             ## ClawApp FPK for 飞牛 fnOS
             安装后桌面图标直接打开，无需 Docker。
-          files: artifacts/**/*.fpk
+          files: artifacts/*.fpk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
